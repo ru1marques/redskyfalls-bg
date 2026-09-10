@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="pt">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Scroll Image Transition Demo</title>
+  <style>
+    :root {
+      --progress: 0;
+      --blur: 0px;
+      --autumn-opacity: 0;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      background: #000;
+      overscroll-behavior: none;
+    }
+
+    body {
+      min-height: 100%;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    /* A long scroll runway. The visible image stays fixed while scroll drives the transition. */
+    .scroll-runway {
+      height: 520vh;
+      position: relative;
+    }
+
+    .stage {
+      position: sticky;
+      top: 0;
+      width: 100%;
+      height: 100vh;
+      overflow: hidden;
+      background: #000;
+    }
+
+    .frame {
+      position: absolute;
+      inset: -7%; /* prevents blur edges from revealing black borders */
+      width: 114%;
+      height: 114%;
+      object-fit: cover;
+      object-position: center;
+      will-change: opacity, filter, transform;
+      transform: scale(1.015);
+      filter: blur(var(--blur));
+    }
+
+    .green {
+      z-index: 1;
+      opacity: 1;
+    }
+
+    .autumn {
+      z-index: 2;
+      opacity: var(--autumn-opacity);
+    }
+
+    /* subtle dark veil only while blur is strongest; helps the demo feel cinematic */
+    .veil {
+      position: absolute;
+      inset: 0;
+      z-index: 3;
+      pointer-events: none;
+      background: rgba(0,0,0,0.08);
+      opacity: calc(var(--blur) / 22);
+    }
+
+    .progress-widget {
+      position: fixed;
+      right: 22px;
+      top: 50%;
+      transform: translateY(-50%);
+      z-index: 10;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      color: #fff;
+      user-select: none;
+      mix-blend-mode: difference;
+    }
+
+    .progress-track {
+      width: 3px;
+      height: 180px;
+      border-radius: 99px;
+      background: rgba(255,255,255,.32);
+      overflow: hidden;
+      position: relative;
+    }
+
+    .progress-fill {
+      position: absolute;
+      inset: auto 0 0;
+      height: calc(var(--progress) * 100%);
+      background: #fff;
+      border-radius: inherit;
+      transition: height 50ms linear;
+    }
+
+    .progress-number {
+      min-width: 48px;
+      text-align: right;
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: .06em;
+      font-variant-numeric: tabular-nums;
+      text-shadow: 0 1px 12px rgba(0,0,0,.35);
+    }
+
+    @media (max-width: 700px) {
+      .scroll-runway { height: 460vh; }
+      .progress-widget { right: 14px; gap: 9px; }
+      .progress-track { height: 132px; }
+      .progress-number { min-width: 42px; font-size: 12px; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .frame { filter: none !important; }
+      .veil { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <main class="scroll-runway" id="runway" aria-label="Demonstração de transição de imagem controlada pelo scroll">
+    <section class="stage">
+      <img class="frame green" src="landscape-green.jpg" alt="Paisagem verde de montanha junto a um lago" />
+      <img class="frame autumn" src="landscape-autumn.jpg" alt="A mesma paisagem em tons de outono e neve" />
+      <div class="veil"></div>
+    </section>
+  </main>
+
+  <aside class="progress-widget" aria-label="Progresso do scroll">
+    <div class="progress-track" aria-hidden="true"><div class="progress-fill"></div></div>
+    <div class="progress-number" id="progressText">0%</div>
+  </aside>
+
+  <script>
+    const root = document.documentElement;
+    const runway = document.getElementById('runway');
+    const progressText = document.getElementById('progressText');
+
+    const clamp01 = n => Math.min(1, Math.max(0, n));
+    const smoothstep = t => t * t * (3 - 2 * t);
+
+    function update() {
+      const maxScroll = runway.offsetHeight - window.innerHeight;
+      const raw = maxScroll > 0 ? window.scrollY / maxScroll : 0;
+      const p = clamp01(raw);
+
+      // CROSSFADE
+      // Starts subtly after the opening, then gradually takes over across the scroll.
+      // smoothstep avoids a mechanical/linear feel.
+      const imageMix = smoothstep(clamp01((p - 0.08) / 0.82));
+
+      // BLUR CURVE
+      // 0%  -> perfectly focused
+      // 10% -> rapidly becomes strongly blurred
+      // 10–90% -> remains strongly blurred
+      // 90–100% -> returns smoothly to perfect focus
+      const maxBlur = 22; // moderate-strong blur, in px
+      let blurAmount;
+
+      if (p < 0.10) {
+        blurAmount = maxBlur * smoothstep(p / 0.10);
+      } else if (p <= 0.90) {
+        // Keeps the middle deliberately strong, with a tiny breathing variation.
+        const middle = (p - 0.10) / 0.80;
+        blurAmount = maxBlur - Math.sin(middle * Math.PI) * 5.5;
+      } else {
+        blurAmount = maxBlur * (1 - smoothstep((p - 0.90) / 0.10));
+      }
+
+      root.style.setProperty('--progress', p.toFixed(4));
+      root.style.setProperty('--autumn-opacity', imageMix.toFixed(4));
+      root.style.setProperty('--blur', `${blurAmount.toFixed(2)}px`);
+      progressText.textContent = `${Math.round(p * 100)}%`;
+    }
+
+    let ticking = false;
+    function onScroll() {
+      if (!ticking) {
+        requestAnimationFrame(() => {
+          update();
+          ticking = false;
+        });
+        ticking = true;
+      }
+    }
+
+    addEventListener('scroll', onScroll, { passive: true });
+    addEventListener('resize', update);
+    update();
+  </script>
+</body>
+</html>
